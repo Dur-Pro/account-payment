@@ -11,17 +11,29 @@ class AccountPaymentRegister(models.TransientModel):
 
     invoice_id = fields.Many2one(comodel_name="account.move", string="Invoice")
     discount_amt = fields.Monetary(store=True)
+    move_ids = fields.Many2many("account.move", compute="_get_move_ids", string="Invoices")
 
     @api.model
     def default_get(self, fields):
         res = super().default_get(fields)
         active_id = self.env.context.get("active_ids", [])
-        if self.env.context.get("active_model") == "account.move" and (
-            isinstance(active_id, int) or len(active_id) == 1
-        ):
-            record = self.env["account.move"].browse(active_id)
-            res.update({"invoice_id": record.id, "discount_amt": record.discount_amt})
+        if self.env.context.get("active_model") == "account.move":
+            if isinstance(active_id, int) or len(active_id) == 1:
+                record = self.env["account.move"].browse(active_id)
+                res.update({"invoice_id": record.id, "discount_amt": record.discount_amt})
+            elif len(active_id) > 1:
+                records = [self.env["account.move"].browse(inv_id) for inv_id in active_id]
+                self.move_ids = records
+                res.update({"invoices": records})
         return res
+
+    @api.depends("line_ids")
+    def _get_move_ids(self):
+        ids = set()
+        for line in self.line_ids:
+            ids.add(line.move_id.id)
+        ids = list(ids)
+        self.move_ids = ids
 
     @api.onchange("amount", "payment_difference", "payment_date")
     def onchange_payment_amount(self):
