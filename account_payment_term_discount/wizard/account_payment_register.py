@@ -11,7 +11,6 @@ class AccountPaymentRegister(models.TransientModel):
     # override to make it read only as we're forcing amount changes on a per-invoice basis
     amount = fields.Monetary(currency_field='currency_id', store=True, readonly=True,
                              compute='_compute_amount')
-
     payment_line_ids = fields.One2many("account.payment.register.line", "register_id", string="Invoices to be paid.",
                                        readonly=False, compute="_compute_payment_lines")
 
@@ -27,6 +26,8 @@ class AccountPaymentRegister(models.TransientModel):
         for wizard in self:
             invoices = set()
             wizard.payment_line_ids = []
+            if len(wizard.line_ids) > 1:
+                self.group_payment = True
             for line in wizard.line_ids:
                 invoices.add(line.move_id)
             wizard.payment_line_ids = \
@@ -66,14 +67,6 @@ class AccountPaymentRegister(models.TransientModel):
     def action_create_payments(self):
         active_id = self.env.context.get("active_ids", [])
 
-        if (not isinstance(active_id, int)) and len(active_id) != 1:
-            # For multiple invoices, there is account.register.payments wizard
-            raise UserError(
-                _(
-                    "This method should only be called to process a "
-                    "single invoice's payment."
-                )
-            )
         res = super().action_create_payments()
         for payment in self:
             if payment.payment_difference_handling == "reconcile":
@@ -96,57 +89,18 @@ class AccountPaymentRegisterLine(models.TransientModel):
                                    string='Discount')
     discount_pct = fields.Float(store=True, compute="_compute_discount", inverse='_inverse_discount_pct',
                                 string='Discount %')
-
     ref = fields.Char(related="invoice_id.ref", string="Invoice")
     invoice_date = fields.Date(related="invoice_id.invoice_date", string="Invoice Date")
     amount_total = fields.Monetary(related="invoice_id.amount_total", string="Invoice Total")
 
-    # @api.onchange("payment_amt")
-    # def _onchange_payment_amt(self):
-    #     for line in self:
-    #         if line.payment_amt:
-    #             if line.payment_amt < 0:
-    #                 raise UserError(_("Cannot set a negative payment amount."))
-    #             line.discount_amt = line.amount_total - line.payment_amt
-    #             line.discount_pct = line.discount_amt / line.amount_total
-    #             line.register_id._compute_amount()
-    #     pass
-    #
-    # @api.onchange("discount_amt")
-    #
-    # def _onchange_discount_amt(self):
-    #     for line in self:
-    #         if line.discount_amt:
-    #             if line.discount_amt < 0 or line.discount_amt > line.amount_total:
-    #                 raise UserError(_("Discount amount must be between 0 and the invoice total."))
-    #             line.payment_amt = line.amount_total - line.discount_amt
-    #             line.discount_pct = line.discount_amt / line.amount_total
-    #             line.register_id._compute_amount()
-    #     pass
-    #
-    # @api.onchange("discount_pct")
-    # @_semaphore
-    # def _onchange_discount_pct(self):
-    #     for line in self:
-    #         if line.discount_pct:
-    #             if line.discount_pct < 0 or line.discount_pct > 1:
-    #                 raise UserError(_("Discount % must be between 0 and 100."))
-    #             line.discount_amt = line.amount_total * line.discount_pct
-    #             line.payment_amt = line.amount_total - line.discount_amt
-    #             line.register_id._compute_amount()
-    #     pass
-
-
     @api.depends('payment_amt')
     def _compute_discount(self):
-        print("In _compute_discount")
         for line in self:
             line.discount_amt = line.amount_total - line.payment_amt
             line.discount_pct = 100 * line.discount_amt / line.amount_total
 
     @api.onchange('discount_pct')
     def _inverse_discount_pct(self):
-        print("In _inverse_discount_pct")
         for line in self:
             if line.discount_pct:
                 if line.discount_pct < 0 or line.discount_pct > 100:
@@ -154,7 +108,6 @@ class AccountPaymentRegisterLine(models.TransientModel):
                 line.payment_amt = line.amount_total * (1 - line.discount_pct / 100)
     @api.onchange('discount_amt')
     def _inverse_discount_amt(self):
-        print("In _invserse_discount_amt")
         for line in self:
             if line.discount_amt:
                 if line.discount_amt < 0 or line.discount_amt > line.amount_total:
