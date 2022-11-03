@@ -40,8 +40,9 @@ class AccountPaymentRegister(models.TransientModel):
 
     @api.depends("payment_date")
     def onchange_payment_date(self):
+        print("in onchange payment date")
         for wizard in self:
-            wizard.payment_difference_handling = "open"
+            wizard.payment_difference_handling = "reconcile" if any(wizard.payment_line_ids.reconcile) else "open"
             wizard.writeoff_account_id = False
             wizard.writeoff_label = False
 
@@ -64,19 +65,47 @@ class AccountPaymentRegister(models.TransientModel):
             wizard.writeoff_account_id = writeoff_account_id
             wizard.writeoff_label = writeoff_label
 
-    def action_create_payments(self):
-        active_id = self.env.context.get("active_ids", [])
 
+    def _init_payments(self, to_process, edit_mode=False):
+        """ Create the payments.
+
+        :param to_process:  A list of python dictionary, one for each payment to create, containing:
+                            * create_vals:  The values used for the 'create' method.
+                            * to_reconcile: The journal items to perform the reconciliation.
+                            * batch:        A python dict containing everything you want about the source journal items
+                                            to which a payment will be created (see '_get_batches').
+        :param edit_mode:   Is the wizard in edition mode.
+        """
+        # remove any lines that are marked as reconcile = false from the list of lines to use for reconciliation
+        to_remove = [line for line in self.payment_line_ids if not line.reconcile]
+        for x in to_remove:
+            to_process['to_reconcile'].remove(x)
+        # TODO: Fix what is probably a blank amount_difference field
+        return super()._init_payments(to_process, edit_mode)
+
+
+
+    def action_create_payments(self):
         res = super().action_create_payments()
-        for payment in self:
-            if payment.payment_difference_handling == "reconcile":
+
+        for payment in self.payment_line_ids:
+            if payment.reconcile:
                 payment.invoice_id.write(
                     {
-                        "discount_taken": abs(payment.payment_difference),
+                        "discount_taken": abs(payment.discount_amt),
                         "discount_amt": 0,
                     }
                 )
         return res
+
+    @api.depends('line_ids')
+    def _compute_from_lines(self):
+        super()._compute_from_lines()
+        # We will deactivate the editing of the global amount field but want the calculations taking place later
+        # to consider that the amounts were editable (since we make the amounts editable on each line of a multi-line
+        # payment.
+        for wizard in self:
+            wizard.can_edit_wizard = True
 
 
 class AccountPaymentRegisterLine(models.TransientModel):
@@ -92,6 +121,7 @@ class AccountPaymentRegisterLine(models.TransientModel):
     ref = fields.Char(related="invoice_id.ref", string="Invoice")
     invoice_date = fields.Date(related="invoice_id.invoice_date", string="Invoice Date")
     amount_total = fields.Monetary(related="invoice_id.amount_total", string="Invoice Total")
+    reconcile = fields.Boolean(store=True, default=True)
 
     @api.depends('payment_amt')
     def _compute_discount(self):
@@ -119,5 +149,8 @@ class AccountPaymentRegisterLine(models.TransientModel):
             payment_date = fields.Date.from_string(line.register_id.payment_date)
             line.discount_amt = line.invoice_id.invoice_payment_term_id._check_payment_term_discount(line.invoice_id,
                                                                                                      payment_date)[0]
-
+    @api.onchange("reconcile")
+    def onchange_reconcile(self):
+        for line in self:
+            line.register_id.onchange_payment_date()
 

@@ -16,6 +16,7 @@
                                 <field name="discount_pct"/>
                                 <field name="discount_amt"/>
                                 <field name="payment_amt"/>
+                                <field name="reconcile"/>
                             </tree>
                         </field>
                     </page>
