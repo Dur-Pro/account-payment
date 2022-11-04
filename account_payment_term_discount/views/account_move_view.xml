@@ -34,6 +34,7 @@
         <field name="inherit_id" ref="account.view_invoice_tree" />
         <field name="arch" type="xml">
             <field name="invoice_date_due" position="after">
+                <field name="discount_taken" />
                 <field name="discount_amt" />
                 <field name="discount_date" />
             </field>

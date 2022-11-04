@@ -9,10 +9,11 @@ from odoo.exceptions import UserError
 class AccountPaymentRegister(models.TransientModel):
     _inherit = "account.payment.register"
     # override to make it read only as we're forcing amount changes on a per-invoice basis
-    amount = fields.Monetary(currency_field='currency_id', store=True, readonly=True,
-                             compute='_compute_amount')
+    amount = fields.Monetary(currency_field='currency_id', store=True, readonly=False,
+                             compute='_compute_amount', force_save=True)
     payment_line_ids = fields.One2many("account.payment.register.line", "register_id", string="Invoices to be paid.",
                                        readonly=False, compute="_compute_payment_lines")
+
 
     @api.depends('source_amount', 'source_amount_currency', 'source_currency_id', 'company_id', 'currency_id',
                  'payment_date', 'payment_line_ids.payment_amt')
@@ -20,6 +21,7 @@ class AccountPaymentRegister(models.TransientModel):
         # TODO: fix for multi-currency invoice payments
         for wizard in self:
             wizard.amount = sum(line.payment_amt for line in wizard.payment_line_ids)
+            wizard.payment_difference = sum(line.amount_total for line in wizard.payment_line_ids) - wizard.amount
 
     @api.depends("line_ids")
     def _compute_payment_lines(self):
@@ -37,34 +39,33 @@ class AccountPaymentRegister(models.TransientModel):
                          'currency_id': wizard.currency_id,
                          'payment_amt': inv.amount_residual - inv.discount_amt,
                          } for inv in invoices))
+            self._compute_payment_difference_handling()
+            self._get_writeoff_info()
 
-    @api.depends("payment_date")
-    def onchange_payment_date(self):
-        print("in onchange payment date")
+    @api.onchange("payment_date")
+    def _onchange_payment_date(self):
+        print("in discounts and writeoff info")
         for wizard in self:
-            wizard.payment_difference_handling = "reconcile" if any(wizard.payment_line_ids.reconcile) else "open"
-            wizard.writeoff_account_id = False
-            wizard.writeoff_label = False
-
-            payment_amt = 0
-            amount_difference = 0
-            writeoff_account_id = False
-            writeoff_label = False
+            self._compute_payment_difference_handling()
             for line in wizard.payment_line_ids:
                 line.onchange_payment_date()
-                payment_amt += line.payment_amt
-                amount_difference += line.discount_amt
-                if line.discount_amt:
-                    writeoff_label = "Payment Discount"
-                    for term_line in line.invoice_id.invoice_payment_term_id.line_ids:
-                        # TODO: allow for terms with different writeoff accounts
-                        writeoff_account_id = term_line.discount_expense_account_id
-            wizard.payment_difference = amount_difference
-            amount_residual = sum({line.invoice_id.amount_residual for line in wizard.payment_line_ids})
-            wizard.amount = amount_residual - wizard.payment_difference
-            wizard.writeoff_account_id = writeoff_account_id
-            wizard.writeoff_label = writeoff_label
 
+    def _get_writeoff_info(self):
+        for line in self.payment_line_ids:
+            if line.discount_amt:
+                self.writeoff_label = "Payment Discount"
+                for term_line in line.invoice_id.invoice_payment_term_id.line_ids:
+                    # TODO: allow for terms with different writeoff accounts
+                    if line.invoice_id.journal_id.type == 'sale' and term_line.discount_expense_account_id:
+                        self.writeoff_account_id = term_line.discount_expense_account_id
+                    elif line.invoice_id.journal_id.type == 'purchase' and term_line.discount_income_account_id:
+                        self.writeoff_account_id = term_line.discount_income_account_id
+
+    def _compute_payment_difference_handling(self):
+        if any([line.reconcile for line in self.payment_line_ids]):
+            self.payment_difference_handling = "reconcile"
+        else:
+            self.payment_difference_handling = "open"
 
     def _init_payments(self, to_process, edit_mode=False):
         """ Create the payments.
@@ -80,14 +81,11 @@ class AccountPaymentRegister(models.TransientModel):
         to_remove = [line for line in self.payment_line_ids if not line.reconcile]
         for x in to_remove:
             to_process['to_reconcile'].remove(x)
-        # TODO: Fix what is probably a blank amount_difference field
         return super()._init_payments(to_process, edit_mode)
-
-
 
     def action_create_payments(self):
         res = super().action_create_payments()
-
+        # TODO: figure out how to leave invoices open when "reconcile" is unchecked
         for payment in self.payment_line_ids:
             if payment.reconcile:
                 payment.invoice_id.write(
@@ -152,5 +150,5 @@ class AccountPaymentRegisterLine(models.TransientModel):
     @api.onchange("reconcile")
     def onchange_reconcile(self):
         for line in self:
-            line.register_id.onchange_payment_date()
+            line.register_id._compute_payment_difference_handling()
 
