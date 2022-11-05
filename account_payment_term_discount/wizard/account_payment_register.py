@@ -9,11 +9,42 @@ from odoo.exceptions import UserError
 class AccountPaymentRegister(models.TransientModel):
     _inherit = "account.payment.register"
     # override to make it read only as we're forcing amount changes on a per-invoice basis
+
+    # @api.model
+    # def _default_get_payment_line(self, res, move_line_ids):
+    #     move_line_rs = self.env["aacount_move_line"].browse(move_live_ids)
+    #     invoices = set()
+    #     for line in move_line_rs:
+    #         invoices.add(line.move_id)
+    #
+    #     return self.env['account.payment.register.line'].create(
+    #         {'invoice_id': inv.id,
+    #          'register_id': self.id,
+    #          'currency_id': self.currency_id,
+    #          'payment_amt': inv.amount_residual - inv.discount_amt,
+    #          } for inv in invoices)
+
+    @api.model
+    def default_get(self, fields):
+        res = super(AccountPaymentRegister, self).default_get(fields)
+        if res['line_ids']:
+            invoices = self.env['account.move'].browse(self.env.context['active_ids'])
+
+            res['payment_line_ids'] = self.env['account.payment.register.line'].create({
+                'invoice_id': inv.id,
+                'register_id': self.id,
+                'currency_id': self.currency_id,
+                'payment_amt': inv.amount_residual - inv.discount_amt} for inv in invoices)
+        return res
+
     amount = fields.Monetary(currency_field='currency_id', store=True, readonly=False,
                              compute='_compute_amount', force_save=True)
-    payment_line_ids = fields.One2many("account.payment.register.line", "register_id", string="Invoices to be paid.",
-                                       readonly=False, compute="_compute_payment_lines")
-
+    payment_line_ids = fields.One2many(
+        comodel_name="account.payment.register.line",
+        inverse_name="register_id",
+        string="Invoices to be paid.",
+        readonly=False,
+        compute="_compute_payment_lines")
 
     @api.depends('source_amount', 'source_amount_currency', 'source_currency_id', 'company_id', 'currency_id',
                  'payment_date', 'payment_line_ids.payment_amt')
@@ -25,20 +56,8 @@ class AccountPaymentRegister(models.TransientModel):
 
     @api.depends("line_ids")
     def _compute_payment_lines(self):
+        print(f"_compute_payment_lines {self}")
         for wizard in self:
-            invoices = set()
-            wizard.payment_line_ids = []
-            if len(wizard.line_ids) > 1:
-                self.group_payment = True
-            for line in wizard.line_ids:
-                invoices.add(line.move_id)
-            wizard.payment_line_ids = \
-                (wizard.env['account.payment.register.line'].
-                 create({'invoice_id': inv.id,
-                         'register_id': wizard.id,
-                         'currency_id': wizard.currency_id,
-                         'payment_amt': inv.amount_residual - inv.discount_amt,
-                         } for inv in invoices))
             self._compute_payment_difference_handling()
             self._get_writeoff_info()
 
@@ -108,6 +127,8 @@ class AccountPaymentRegister(models.TransientModel):
 
 class AccountPaymentRegisterLine(models.TransientModel):
     _name = 'account.payment.register.line'
+    _description = 'Account Payment Register Line'
+
     invoice_id = fields.Many2one(comodel_name="account.move", string="Invoice")
     register_id = fields.Many2one(comodel_name='account.payment.register', string="Payment Register Wizard")
     currency_id = fields.Many2one('res.currency', related="register_id.currency_id")
@@ -134,6 +155,7 @@ class AccountPaymentRegisterLine(models.TransientModel):
                 if line.discount_pct < 0 or line.discount_pct > 100:
                     raise UserError(_("Discount percentage must be between 0% and 100%."))
                 line.payment_amt = line.amount_total * (1 - line.discount_pct / 100)
+
     @api.onchange('discount_amt')
     def _inverse_discount_amt(self):
         for line in self:
