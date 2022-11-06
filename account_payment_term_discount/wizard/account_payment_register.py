@@ -10,41 +10,32 @@ class AccountPaymentRegister(models.TransientModel):
     _inherit = "account.payment.register"
     # override to make it read only as we're forcing amount changes on a per-invoice basis
 
-    # @api.model
-    # def _default_get_payment_line(self, res, move_line_ids):
-    #     move_line_rs = self.env["aacount_move_line"].browse(move_live_ids)
-    #     invoices = set()
-    #     for line in move_line_rs:
-    #         invoices.add(line.move_id)
-    #
-    #     return self.env['account.payment.register.line'].create(
-    #         {'invoice_id': inv.id,
-    #          'register_id': self.id,
-    #          'currency_id': self.currency_id,
-    #          'payment_amt': inv.amount_residual - inv.discount_amt,
-    #          } for inv in invoices)
+    amount = fields.Monetary(currency_field='currency_id',
+                             store=True,
+                             readonly=False,
+                             compute='_compute_amount',
+                             force_save=True)
+
+    payment_line_ids = fields.One2many(comodel_name="account.payment.register.line",
+                                       inverse_name="register_id",
+                                       string="Invoices to be paid.")
 
     @api.model
     def default_get(self, fields):
+        """ Create one payment line per invoices related to invoice lines then link it payment_line_ids"""
         res = super(AccountPaymentRegister, self).default_get(fields)
-        if res['line_ids']:
-            invoices = self.env['account.move'].browse(self.env.context['active_ids'])
-
-            res['payment_line_ids'] = self.env['account.payment.register.line'].create({
-                'invoice_id': inv.id,
-                'register_id': self.id,
-                'currency_id': self.currency_id,
-                'payment_amt': inv.amount_residual - inv.discount_amt} for inv in invoices)
+        lines = self.env['account.move.line'].browse(res['line_ids'][0][2])
+        invoices = self.env['account.move']
+        for line in lines:
+            invoices |= line.move_id
+        payment_register_line = self.env['account.payment.register.line'].create(
+            {'invoice_id': inv.id,
+             'register_id': self.id,
+             'currency_id': self.currency_id,
+             'payment_amt': inv.amount_residual - inv.discount_amt}
+            for inv in invoices)
+        res['payment_line_ids'] = [(6, 0, payment_register_line.ids)]
         return res
-
-    amount = fields.Monetary(currency_field='currency_id', store=True, readonly=False,
-                             compute='_compute_amount', force_save=True)
-    payment_line_ids = fields.One2many(
-        comodel_name="account.payment.register.line",
-        inverse_name="register_id",
-        string="Invoices to be paid.",
-        readonly=False,
-        compute="_compute_payment_lines")
 
     @api.depends('source_amount', 'source_amount_currency', 'source_currency_id', 'company_id', 'currency_id',
                  'payment_date', 'payment_line_ids.payment_amt')
@@ -54,16 +45,8 @@ class AccountPaymentRegister(models.TransientModel):
             wizard.amount = sum(line.payment_amt for line in wizard.payment_line_ids)
             wizard.payment_difference = sum(line.amount_total for line in wizard.payment_line_ids) - wizard.amount
 
-    @api.depends("line_ids")
-    def _compute_payment_lines(self):
-        print(f"_compute_payment_lines {self}")
-        for wizard in self:
-            self._compute_payment_difference_handling()
-            self._get_writeoff_info()
-
     @api.onchange("payment_date")
     def _onchange_payment_date(self):
-        print("in discounts and writeoff info")
         for wizard in self:
             self._compute_payment_difference_handling()
             for line in wizard.payment_line_ids:
@@ -107,12 +90,8 @@ class AccountPaymentRegister(models.TransientModel):
         # TODO: figure out how to leave invoices open when "reconcile" is unchecked
         for payment in self.payment_line_ids:
             if payment.reconcile:
-                payment.invoice_id.write(
-                    {
-                        "discount_taken": abs(payment.discount_amt),
-                        "discount_amt": 0,
-                    }
-                )
+                payment.invoice_id.write({"discount_taken": abs(payment.discount_amt),
+                                          "discount_amt": 0})
         return res
 
     @api.depends('line_ids')
@@ -123,7 +102,9 @@ class AccountPaymentRegister(models.TransientModel):
         # payment.
         for wizard in self:
             wizard.can_edit_wizard = True
-
+        # 'Moving from the calculated field to that depends on the same fields
+        self._compute_payment_difference_handling()
+        self._get_writeoff_info()
 
 class AccountPaymentRegisterLine(models.TransientModel):
     _name = 'account.payment.register.line'
