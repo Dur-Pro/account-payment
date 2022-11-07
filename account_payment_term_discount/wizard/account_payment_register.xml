@@ -10,9 +10,10 @@
                     <page string="Invoices to be Paid">
                         <field name="payment_line_ids">
                             <tree string="Invoices to Pay" editable="bottom" create="0" delete="0">
+                                <field name="invoice_id"/>
                                 <field name="invoice_date"/>
-                                <field name="ref"/>
-                                <field name="amount_total"/>
+                                <field name="ref" />
+                                <field name="amount_residual"/>
                                 <field name="discount_pct"/>
                                 <field name="discount_amt"/>
                                 <field name="payment_amt"/>
