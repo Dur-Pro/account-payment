@@ -10,15 +10,17 @@ class AccountPaymentRegister(models.TransientModel):
     _inherit = "account.payment.register"
     # override to make it read only as we're forcing amount changes on a per-invoice basis
 
-    amount = fields.Monetary(currency_field='currency_id',
-                             store=True,
-                             readonly=False,
-                             compute='_compute_amount',
-                             force_save=True)
+    amount = fields.Monetary(
+        currency_field='currency_id',
+        store=True,
+        readonly=False,
+        compute='_compute_amount',
+        force_save=True)
 
-    payment_line_ids = fields.One2many(comodel_name="account.payment.register.line",
-                                       inverse_name="register_id",
-                                       string="Invoices to be paid.")
+    payment_line_ids = fields.One2many(
+        comodel_name="account.payment.register.line",
+        inverse_name="register_id",
+        string="Invoices to be paid.")
 
     @api.model
     def default_get(self, fields):
@@ -106,22 +108,45 @@ class AccountPaymentRegister(models.TransientModel):
         self._compute_payment_difference_handling()
         self._get_writeoff_info()
 
+
 class AccountPaymentRegisterLine(models.TransientModel):
     _name = 'account.payment.register.line'
     _description = 'Account Payment Register Line'
 
-    invoice_id = fields.Many2one(comodel_name="account.move", string="Invoice")
-    register_id = fields.Many2one(comodel_name='account.payment.register', string="Payment Register Wizard")
-    currency_id = fields.Many2one('res.currency', related="register_id.currency_id")
-    payment_amt = fields.Monetary(store=True, string='Payment')
-    discount_amt = fields.Monetary(store=True, compute="_compute_discount", inverse='_inverse_discount_amt',
-                                   string='Discount')
-    discount_pct = fields.Float(store=True, compute="_compute_discount", inverse='_inverse_discount_pct',
-                                string='Discount %')
-    ref = fields.Char(related="invoice_id.ref", string="Invoice")
-    invoice_date = fields.Date(related="invoice_id.invoice_date", string="Invoice Date")
-    amount_total = fields.Monetary(related="invoice_id.amount_total", string="Invoice Total")
-    reconcile = fields.Boolean(store=True, default=True)
+    invoice_id = fields.Many2one(
+        comodel_name="account.move",
+        string="Invoice")
+    register_id = fields.Many2one(
+        comodel_name='account.payment.register',
+        string="Payment Register Wizard")
+    currency_id = fields.Many2one(
+        comodel_name='res.currency',
+        related="register_id.currency_id")
+    payment_amt = fields.Monetary(
+        store=True,
+        string='Payment')
+    discount_amt = fields.Monetary(
+        store=True,
+        compute="_compute_discount",
+        inverse='_inverse_discount_amt',
+        string='Discount')
+    discount_pct = fields.Float(
+        store=True,
+        compute="_compute_discount",
+        inverse='_inverse_discount_pct',
+        string='Discount %')
+    ref = fields.Char(
+        related="invoice_id.ref",
+        string="Invoice")
+    invoice_date = fields.Date(
+        related="invoice_id.invoice_date",
+        string="Invoice Date")
+    amount_total = fields.Monetary(
+        related="invoice_id.amount_total",
+        string="Invoice Total")
+    reconcile = fields.Boolean(
+        store=True,
+        default=True)
 
     @api.depends('payment_amt')
     def _compute_discount(self):
