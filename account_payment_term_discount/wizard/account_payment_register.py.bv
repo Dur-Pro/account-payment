@@ -26,17 +26,18 @@ class AccountPaymentRegister(models.TransientModel):
     def default_get(self, fields):
         """ Create one payment line per invoices related to invoice lines then link it payment_line_ids"""
         res = super(AccountPaymentRegister, self).default_get(fields)
-        lines = self.env['account.move.line'].browse(res['line_ids'][0][2])
-        invoices = self.env['account.move']
-        for line in lines:
-            invoices |= line.move_id
-        payment_register_line = self.env['account.payment.register.line'].create(
-            {'invoice_id': inv.id,
-             'register_id': self.id,
-             'currency_id': self.currency_id,
-             'payment_amt': inv.amount_residual - inv.discount_amt}
-            for inv in invoices)
-        res['payment_line_ids'] = [(6, 0, payment_register_line.ids)]
+        if 'payment_line_ids' in fields and 'payment_line_ids' not in res:
+            lines = self.env['account.move.line'].browse(res['line_ids'][0][2])
+            invoices = self.env['account.move']
+            for line in lines:
+                invoices |= line.move_id
+            payment_register_line = self.env['account.payment.register.line'].create(
+                {'invoice_id': inv.id,
+                 'register_id': self.id,
+                 'currency_id': self.currency_id,
+                 'payment_amt': inv.amount_residual - inv.discount_amt}
+                for inv in invoices)
+            res['payment_line_ids'] = [(6, 0, payment_register_line.ids)]
         return res
 
     @api.depends('source_amount', 'source_amount_currency', 'source_currency_id', 'company_id', 'currency_id',
@@ -45,7 +46,12 @@ class AccountPaymentRegister(models.TransientModel):
         # TODO: fix for multi-currency invoice payments
         for wizard in self:
             wizard.amount = sum(line.payment_amt for line in wizard.payment_line_ids)
-            wizard.payment_difference = sum(line.amount_total for line in wizard.payment_line_ids) - wizard.amount
+            wizard.payment_difference = sum(line.amount_residual for line in wizard.payment_line_ids) - wizard.amount
+
+    @api.depends('payment_line_ids')
+    def _compute_group_payment(self):
+        for wizard in self:
+            wizard.group_payment = len(wizard.payment_line_ids) > 1
 
     @api.onchange("payment_date")
     def _onchange_payment_date(self):
@@ -113,6 +119,7 @@ class AccountPaymentRegisterLine(models.TransientModel):
     _name = 'account.payment.register.line'
     _description = 'Account Payment Register Line'
 
+<<<<<<< HEAD:account_payment_term_discount/wizard/account_payment_register.py.bv
     invoice_id = fields.Many2one(
         comodel_name="account.move",
         string="Invoice")
@@ -147,12 +154,26 @@ class AccountPaymentRegisterLine(models.TransientModel):
     reconcile = fields.Boolean(
         store=True,
         default=True)
+=======
+    invoice_id = fields.Many2one(comodel_name="account.move", string="Invoice")
+    register_id = fields.Many2one(comodel_name='account.payment.register', string="Payment Register Wizard")
+    currency_id = fields.Many2one('res.currency', related="register_id.currency_id")
+    payment_amt = fields.Monetary(store=True, string='Payment')
+    discount_amt = fields.Monetary(store=True, compute="_compute_discount", inverse='_inverse_discount_amt',
+                                   string='Discount')
+    discount_pct = fields.Float(store=True, compute="_compute_discount", inverse='_inverse_discount_pct',
+                                string='Discount %')
+    ref = fields.Char(related="invoice_id.ref", string="Invoice #")
+    invoice_date = fields.Date(related="invoice_id.invoice_date", string="Invoice Date")
+    amount_residual = fields.Monetary(related="invoice_id.amount_residual", string="Amount Owing")
+    reconcile = fields.Boolean(store=True, default=True)
+>>>>>>> d75dc322bf1735819a03bb3eca75e705530163f2:account_payment_term_discount/wizard/account_payment_register.py
 
     @api.depends('payment_amt')
     def _compute_discount(self):
         for line in self:
-            line.discount_amt = line.amount_total - line.payment_amt
-            line.discount_pct = 100 * line.discount_amt / line.amount_total
+            line.discount_amt = line.amount_residual - line.payment_amt
+            line.discount_pct = 100 * line.discount_amt / line.amount_residual
 
     @api.onchange('discount_pct')
     def _inverse_discount_pct(self):
@@ -160,23 +181,23 @@ class AccountPaymentRegisterLine(models.TransientModel):
             if line.discount_pct:
                 if line.discount_pct < 0 or line.discount_pct > 100:
                     raise UserError(_("Discount percentage must be between 0% and 100%."))
-                line.payment_amt = line.amount_total * (1 - line.discount_pct / 100)
+                line.payment_amt = line.amount_residual * (1 - line.discount_pct / 100)
 
     @api.onchange('discount_amt')
     def _inverse_discount_amt(self):
         for line in self:
             if line.discount_amt:
-                if line.discount_amt < 0 or line.discount_amt > line.amount_total:
+                if line.discount_amt < 0 or line.discount_amt > line.amount_residual:
                     raise UserError(_("Discount must be between 0 and the invoice total."))
-                line.payment_amt = line.amount_total - line.discount_amt
+                line.payment_amt = line.amount_residual - line.discount_amt
 
     def onchange_payment_date(self):
         for line in self:
             payment_date = fields.Date.from_string(line.register_id.payment_date)
             line.discount_amt = line.invoice_id.invoice_payment_term_id._check_payment_term_discount(line.invoice_id,
                                                                                                      payment_date)[0]
+
     @api.onchange("reconcile")
     def onchange_reconcile(self):
         for line in self:
             line.register_id._compute_payment_difference_handling()
-
