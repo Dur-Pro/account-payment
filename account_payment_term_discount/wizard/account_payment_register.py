@@ -154,7 +154,7 @@ class AccountPaymentRegisterLine(models.TransientModel):
     reconcile = fields.Boolean(
         store=True,
         default=True)
-=======
+
     invoice_id = fields.Many2one(comodel_name="account.move", string="Invoice")
     register_id = fields.Many2one(comodel_name='account.payment.register', string="Payment Register Wizard")
     currency_id = fields.Many2one('res.currency', related="register_id.currency_id")
@@ -167,7 +167,6 @@ class AccountPaymentRegisterLine(models.TransientModel):
     invoice_date = fields.Date(related="invoice_id.invoice_date", string="Invoice Date")
     amount_residual = fields.Monetary(related="invoice_id.amount_residual", string="Amount Owing")
     reconcile = fields.Boolean(store=True, default=True)
->>>>>>> d75dc322bf1735819a03bb3eca75e705530163f2:account_payment_term_discount/wizard/account_payment_register.py
 
     @api.depends('payment_amt')
     def _compute_discount(self):
