@@ -53,7 +53,7 @@ class AccountPaymentRegister(models.TransientModel):
         # TODO: fix for multi-currency invoice payments
         for wizard in self:
             wizard.amount = sum(line.payment_amt for line in wizard.payment_line_ids)
-            wizard.payment_difference = sum(line.amount_total for line in wizard.payment_line_ids) - wizard.amount
+            wizard.payment_difference = sum(line.amount_residual for line in wizard.payment_line_ids) - wizard.amount
 
     @api.onchange("payment_date")
     def _onchange_payment_date(self):
@@ -153,8 +153,8 @@ class AccountPaymentRegisterLine(models.TransientModel):
     invoice_date = fields.Date(
         related="invoice_id.invoice_date",
         string="Invoice Date")
-    amount_total = fields.Monetary(
-        related="invoice_id.amount_total",
+    amount_residual = fields.Monetary(
+        related="invoice_id.amount_residual",
         string="Invoice Total")
     reconcile = fields.Boolean(
         store=True,
@@ -163,8 +163,8 @@ class AccountPaymentRegisterLine(models.TransientModel):
     @api.depends('payment_amt')
     def _compute_discount(self):
         for line in self:
-            line.discount_amt = line.amount_total - line.payment_amt
-            line.discount_pct = 100 * line.discount_amt / line.amount_total
+            line.discount_amt = line.amount_residual - line.payment_amt
+            line.discount_pct = 100 * line.discount_amt / line.amount_residual
 
     @api.onchange('discount_pct')
     def _inverse_discount_pct(self):
@@ -172,15 +172,15 @@ class AccountPaymentRegisterLine(models.TransientModel):
             if line.discount_pct:
                 if line.discount_pct < 0 or line.discount_pct > 100:
                     raise UserError(_("Discount percentage must be between 0% and 100%."))
-                line.payment_amt = line.amount_total * (1 - line.discount_pct / 100)
+                line.payment_amt = line.amount_residual * (1 - line.discount_pct / 100)
 
     @api.onchange('discount_amt')
     def _inverse_discount_amt(self):
         for line in self:
             if line.discount_amt:
-                if line.discount_amt < 0 or line.discount_amt > line.amount_total:
+                if line.discount_amt < 0 or line.discount_amt > line.amount_residual:
                     raise UserError(_("Discount must be between 0 and the invoice total."))
-                line.payment_amt = line.amount_total - line.discount_amt
+                line.payment_amt = line.amount_residual - line.discount_amt
 
     def onchange_payment_date(self):
         for line in self:
