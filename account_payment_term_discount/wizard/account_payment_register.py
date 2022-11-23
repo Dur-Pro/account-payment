@@ -120,6 +120,14 @@ class AccountPaymentRegister(models.TransientModel):
         self._compute_payment_difference_handling()
         self._get_writeoff_info()
 
+    @api.depends('can_edit_wizard', 'payment_difference', 'payment_line_ids')
+    def _compute_group_payment(self):
+        for wizard in self:
+            if wizard.can_edit_wizard:
+                wizard.group_payment = wizard.group_payment or (len(wizard.payment_line_ids) > 1
+                                                                and wizard.payment_difference != 0)
+            else:
+                wizard.group_payment = False
 
 class AccountPaymentRegisterLine(models.TransientModel):
     _name = 'account.payment.register.line'
