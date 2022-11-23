@@ -28,6 +28,11 @@ class AccountPaymentRegister(models.TransientModel):
         ('reconcile', 'Mark as fully paid'),
     ], default='reconcile', string="Payment Difference Handling", compute="_compute_payment_difference_handling")
 
+    group_payment = fields.Boolean(string="Group Payments", store=True, readonly=False,
+                                   compute='_compute_group_payment',
+                                   help="Only one payment will be created by partner (bank)/ currency.",
+                                   default=True)
+
     @api.model
     def default_get(self, fields):
         """ Create one payment line per invoices related to invoice lines then link it payment_line_ids"""
