@@ -14,8 +14,7 @@ class AccountPaymentRegister(models.TransientModel):
         currency_field='currency_id',
         store=True,
         readonly=False,
-        compute='_compute_amount',
-        force_save=True
+        compute='_compute_amount'
     )
 
     payment_line_ids = fields.One2many(
@@ -23,6 +22,11 @@ class AccountPaymentRegister(models.TransientModel):
         inverse_name="register_id",
         string="Invoices to be paid."
     )
+
+    payment_difference_handling = fields.Selection([
+        ('open', 'Keep open'),
+        ('reconcile', 'Mark as fully paid'),
+    ], default='reconcile', string="Payment Difference Handling", compute="_compute_payment_difference_handling")
 
     @api.model
     def default_get(self, fields):
@@ -73,9 +77,9 @@ class AccountPaymentRegister(models.TransientModel):
                     elif line.invoice_id.journal_id.type == 'purchase' and term_line.discount_income_account_id:
                         self.writeoff_account_id = term_line.discount_income_account_id
 
-# BV: Look to me as api.depends('payment_line_ids') or simply put as compute for
+    @api.depends("payment_line_ids.reconcile")
     def _compute_payment_difference_handling(self):
-        if any([line.reconcile for line in self.payment_line_ids]):
+        if all([line.reconcile for line in self.payment_line_ids]):
             self.payment_difference_handling = "reconcile"
         else:
             self.payment_difference_handling = "open"
@@ -91,14 +95,17 @@ class AccountPaymentRegister(models.TransientModel):
         :param edit_mode:   Is the wizard in edition mode.
         """
         # remove any lines that are marked as reconcile = false from the list of lines to use for reconciliation
-        to_remove = [line for line in self.payment_line_ids if not line.reconcile]
-        for x in to_remove:
-            to_process['to_reconcile'].remove(x)
+        # for payment in to_process:
+        #     invoices_to_remove = [line.invoice_id for line in self.payment_line_ids if not line.reconcile]
+        #     payment['to_reconcile'] = [line for line in self.line_ids if line.move_id not in invoices_to_remove]
         return super()._init_payments(to_process, edit_mode)
 
     def action_create_payments(self):
         res = super().action_create_payments()
-        # TODO: figure out how to leave invoices open when "reconcile" is unchecked
+        if (self.payment_difference_handling == 'open' and
+            len([line for line in self.payment_line_ids if line.discount_amt > 0]) > 1):
+            raise UserError(_("This wizard does not allow partial payments of multiple invoices that are to " +
+                              "be left open. Use the \"Multiple Invoice Payments\" action instead."))
         for payment in self.payment_line_ids:
             if payment.reconcile:
                 payment.invoice_id.write(
@@ -196,8 +203,8 @@ class AccountPaymentRegisterLine(models.TransientModel):
             line.discount_amt = line.invoice_id.invoice_payment_term_id._check_payment_term_discount(line.invoice_id,
                                                                                                      payment_date)[0]
 
-    @api.onchange("reconcile")
-    def onchange_reconcile(self):
-        for line in self:
-            line.register_id._compute_payment_difference_handling()
+    # @api.onchange("reconcile")
+    # def onchange_reconcile(self):
+    #     for line in self:
+    #         line.register_id._compute_payment_difference_handling()
 
