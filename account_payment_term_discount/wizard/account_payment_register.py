@@ -134,6 +134,11 @@ class AccountPaymentRegister(models.TransientModel):
 
     @api.depends('can_edit_wizard', 'payment_difference', 'payment_line_ids')
     def _compute_group_payment(self):
+        # TODO: Implement multiple AccountInvoiceLines per payment (one per invoice at least, perhaps with one per write-off as well.
+        #       Set the fields date, move_id, journal_id, account_id, sequence, name, debit, credit, payment_id.
+        #       Then, grab each group of lines (the payment allocation, the discount write-off, and the invoice line)
+        #       and run reconcile() on them as in odoo/addons/account/wizard/account_payment_register.py:642
+
         for wizard in self:
             if wizard.can_edit_wizard:
                 wizard.group_payment = wizard.group_payment or (len(wizard.payment_line_ids) > 1
