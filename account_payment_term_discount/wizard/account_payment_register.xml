@@ -5,6 +5,9 @@
         <field name="model">account.payment.register</field>
         <field name="inherit_id" ref="account.view_account_payment_register_form" />
         <field name="arch" type="xml">
+            <field name="writeoff_account_id" position="attributes">
+                <attribute name="attrs">{'required': ['&amp;', ('payment_difference_handling', '=', 'reconcile'), ('payment_difference', '!=', 0.0)]}</attribute>
+            </field>
             <xpath expr="//footer" position="before">
                 <notebook>
                     <page string="Invoices to be Paid">
