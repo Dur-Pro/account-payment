@@ -13,7 +13,7 @@ class AccountPaymentRegister(models.TransientModel):
     amount = fields.Monetary(
         currency_field='currency_id',
         store=True,
-        readonly=False,
+        readonly=True,
         compute='_compute_amount'
     )
 

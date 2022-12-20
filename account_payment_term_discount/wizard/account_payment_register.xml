@@ -8,6 +8,10 @@
             <field name="writeoff_account_id" position="attributes">
                 <attribute name="attrs">{'required': ['&amp;', ('payment_difference_handling', '=', 'reconcile'), ('payment_difference', '!=', 0.0)]}</attribute>
             </field>
+            <field name="amount" position="attributes">
+                <attribute name="force_save">1</attribute>
+                <attribute name="readonly">1</attribute>
+            </field>
             <xpath expr="//footer" position="before">
                 <notebook>
                     <page string="Invoices to be Paid">
