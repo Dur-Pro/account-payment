@@ -152,7 +152,7 @@ class AccountPaymentRegisterLine(models.TransientModel):
 
     invoice_id = fields.Many2one(
         comodel_name="account.move",
-        string="Invoice")
+        string="Invoice Id")
     register_id = fields.Many2one(
         comodel_name='account.payment.register',
         string="Payment Register Wizard")
