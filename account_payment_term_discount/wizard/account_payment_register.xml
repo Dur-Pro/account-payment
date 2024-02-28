@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <record id="view_account_payment_term_form" model="ir.ui.view">
+        <field name="name">account.payment.term.form</field>
+        <field name="model">account.payment.register</field>
+        <field name="inherit_id" ref="account.view_account_payment_register_form" />
+        <field name="arch" type="xml">
+<!--    Commenting as required is now needed to be implemented in Python and no more in xml -->
+<!--            <field name="writeoff_account_id" position="attributes">-->
+<!--                <attribute name="attrs">{'required': ['&amp;', ('payment_difference_handling', '=', 'reconcile'), ('payment_difference', '!=', 0.0)]}</attribute>-->
+<!--            </field>-->
+            <field name="amount" position="attributes">
+                <attribute name="force_save">1</attribute>
+                <attribute name="readonly">1</attribute>
+            </field>
+            <xpath expr="//footer" position="before">
+                <notebook>
+                    <page string="Invoices to be Paid">
+                        <field name="payment_line_ids">
+                            <tree string="Invoices to Pay" editable="bottom" create="0" delete="0">
+                                <field name="invoice_id"/>
+                                <field name="invoice_date"/>
+                                <field name="ref" />
+                                <field name="amount_residual"/>
+                                <field name="discount_pct"/>
+                                <field name="discount_amt"/>
+                                <field name="payment_amt"/>
+                                <field name="reconcile"/>
+                            </tree>
+                        </field>
+                    </page>
+                </notebook>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
